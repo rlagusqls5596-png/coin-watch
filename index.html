@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>코인 실시간 보고</title>
+<style>
+:root{
+  --bg:#0f1115;--card:#181b22;--line:#262a33;--text:#e8eaed;--dim:#9aa0a6;
+  --up:#2ecc71;--down:#ff5c5c;--warn:#f5c542;--accent:#5aa9ff;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+  -webkit-text-size-adjust:100%}
+body{padding:calc(12px + env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom))}
+.wrap{max-width:520px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+h1{font-size:18px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--dim);display:inline-block}
+.dot.live{background:var(--up);box-shadow:0 0 8px var(--up)}
+.dot.err{background:var(--down)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+input,select,button{font:inherit;color:var(--text);background:#10131a;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+input{min-width:0;flex:1}
+button{background:#232838;cursor:pointer}
+button.primary{background:var(--accent);color:#08111f;border:0;font-weight:700}
+button.on{background:var(--up);color:#06150b;border:0;font-weight:700}
+.small{font-size:12px;color:var(--dim)}
+.price{font-size:34px;font-weight:800;letter-spacing:-.5px}
+.chg{font-size:14px;margin-left:6px}
+.up{color:var(--up)}.down{color:var(--down)}.warn{color:var(--warn)}
+.verdict{font-size:20px;font-weight:800;margin:6px 0 4px}
+.outlook{font-size:15px;line-height:1.5}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.kv{background:#10131a;border-radius:10px;padding:10px}
+.kv b{display:block;font-size:17px;margin-top:2px}
+.ladder{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.75}
+.ladder .me{color:var(--accent);font-weight:800}
+.ladder .lv{color:var(--warn)}
+.tug{height:16px;border-radius:8px;overflow:hidden;display:flex;background:#10131a;margin:6px 0}
+.tug span{display:block;height:100%}
+.bars{display:flex;gap:6px}
+.bars div{flex:1;text-align:center;font-weight:700;border-radius:8px;padding:6px 0;background:#10131a}
+.log{max-height:220px;overflow:auto;font-size:13px;line-height:1.6}
+.log div{border-bottom:1px dashed var(--line);padding:3px 0}
+.alertbox{display:none;background:var(--warn);color:#1a1400;font-weight:800;border-radius:12px;padding:12px;margin-bottom:12px;font-size:16px}
+details summary{cursor:pointer;color:var(--dim);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+    <h1><span id="dot" class="dot"></span><span id="title">코인 실시간 보고</span></h1>
+    <div class="row">
+      <input id="sym" placeholder="종목 (예: BLESSUSDT)" autocapitalize="characters" autocomplete="off">
+      <select id="sec"><option value="15">15초</option><option value="30" selected>30초</option><option value="60">60초</option></select>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="levels" placeholder="알림 가격 (쉼표로) 예: 0.0097, 0.01, 0.01051" inputmode="decimal">
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="primary" id="go">시작</button>
+      <button id="snd">🔕 알림 소리 켜기</button>
+      <button id="awake">💡 화면 켜두기</button>
+    </div>
+    <div class="small" id="status" style="margin-top:8px">바이낸스 공개 시세만 읽어요. 주문 기능은 없어요.</div>
+  </div>
+
+  <div class="alertbox" id="alertbox"></div>
+
+  <div class="card">
+    <div class="small" id="time">-</div>
+    <div><span class="price" id="price">-</span><span class="chg" id="chg"></span></div>
+    <div class="small" id="sub">-</div>
+    <div class="verdict" id="verdict">-</div>
+    <div class="outlook" id="outlook"></div>
+  </div>
+
+  <div class="card">
+    <div style="font-weight:700;margin-bottom:6px">🧱 천장 · 🎈 풍선 · 🧱 바닥</div>
+    <div class="ladder" id="ladder">-</div>
+  </div>
+
+  <div class="card">
+    <div style="font-weight:700">👫 줄다리기 (최근 1분봉 3개 매수비율)</div>
+    <div class="small">50%보다 크면 🟢 사는 팀, 작으면 🔴 파는 팀이 이기는 중. 맨 오른쪽이 지금이에요.</div>
+    <div class="bars" id="bars" style="margin-top:8px"></div>
+    <div style="font-weight:700;margin-top:12px">호가창 무게</div>
+    <div class="tug" id="tug"></div>
+    <div class="small" id="tugtxt"></div>
+  </div>
+
+  <div class="card">
+    <div class="grid">
+      <div class="kv"><span class="small">🐋 큰손 롱 비율 (돈 기준)</span><b id="top">-</b></div>
+      <div class="kv"><span class="small">🐜 개미 롱숏 비율</span><b id="ls">-</b></div>
+      <div class="kv"><span class="small">💰 미결제약정</span><b id="oi">-</b></div>
+      <div class="kv"><span class="small">💸 펀딩비</span><b id="fund">-</b></div>
+      <div class="kv"><span class="small">RSI (5분봉)</span><b id="rsi">-</b></div>
+      <div class="kv"><span class="small">5분봉 평균선 9 / 21</span><b id="ema">-</b></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="font-weight:700;margin-bottom:6px">📜 변화 기록</div>
+    <div class="log" id="log"><div class="small">시작하면 벽 생김/사라짐, 알림 가격 돌파가 여기에 쌓여요.</div></div>
+  </div>
+
+  <details class="card">
+    <summary>읽는 법</summary>
+    <div class="small" style="line-height:1.7;margin-top:8px">
+      🎈 풍선 = 지금 가격 · 🧱 천장 = 큰 매도 주문(올라가다 막히는 곳) · 🧱 바닥 = 큰 매수 주문(내려가다 받치는 곳)<br>
+      괄호 안 숫자(K$)는 벽 두께. 클수록 뚫기 어려워요. 벽은 체결 없이 갑자기 사라지기도 해요.<br>
+      🐋 큰손 50% = 반반. 55% 이상이면 큰손이 롱을 늘리는 중, 45% 아래면 숏 쪽.<br>
+      🐜 개미 롱숏 1보다 크면 롱이 많음 → 아래로 깨질 때 롱이 털리기 쉬워요.<br>
+      판정과 전망은 정해진 규칙으로 계산한 참고용이에요. 투자 조언이 아니에요.
+    </div>
+  </details>
+</div>
+
+<script>
+(function(){
+"use strict";
+var B="https://fapi.binance.com";
+var NEAR=6, WALL=8000;
+var $=function(id){return document.getElementById(id)};
+var timer=null, prev=null, startPx=null, audio=null, soundOn=false, wake=null;
+
+function store(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
+$("sym").value=store("sym")||"BLESSUSDT";
+$("levels").value=store("levels")||"";
+$("sec").value=store("sec")||"30";
+
+function get(p){return fetch(B+encodeURI(p).replace(/#/g,"%23")).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json()})}
+function ema(x,n){var k=2/(n+1),o=[x[0]];for(var i=1;i<x.length;i++)o.push(x[i]*k+o[i-1]*(1-k));return o}
+function rsi(c,n){n=n||14;var g=0,l=0,out=50;for(var i=1;i<c.length;i++){var d=c[i]-c[i-1],u=Math.max(d,0),dn=Math.max(-d,0);
+  if(i<=n){g+=u/n;l+=dn/n}else{g=(g*(n-1)+u)/n;l=(l*(n-1)+dn)/n}out=l===0?100:100-100/(1+g/l)}return out}
+function fmt(p){if(p>=100)return p.toLocaleString(undefined,{maximumFractionDigits:2});if(p>=1)return p.toFixed(4);return (+p.toPrecision(5)).toString()}
+function pct(a,b){return b?(a-b)/b*100:0}
+function cls(v){return v>0?"up":v<0?"down":""}
+function ps(v){return (v>0?"+":"")+v.toFixed(2)+"%"}
+function k$(u){return u>=1e6?(u/1e6).toFixed(2)+"M$":Math.round(u/1000)+"K$"}
+
+function beep(up){
+  if(navigator.vibrate)try{navigator.vibrate(up?[120,60,120,60,250]:[250,60,120,60,120])}catch(e){}
+  if(!soundOn||!audio)return;
+  try{var t=audio.currentTime,notes=up?[523,659,784,523,659,784]:[784,659,523,784,659,523];
+    notes.forEach(function(f,i){var o=audio.createOscillator(),g=audio.createGain();o.frequency.value=f;o.type="sine";
+      g.gain.setValueAtTime(0.0001,t+i*0.19);g.gain.exponentialRampToValueAtTime(0.35,t+i*0.19+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t+i*0.19+0.17);
+      o.connect(g);g.connect(audio.destination);o.start(t+i*0.19);o.stop(t+i*0.19+0.18)})}catch(e){}
+}
+$("snd").onclick=function(){
+  try{if(!audio)audio=new (window.AudioContext||window.webkitAudioContext)();audio.resume();soundOn=!soundOn;
+    this.textContent=soundOn?"🔔 알림 소리 켜짐":"🔕 알림 소리 켜기";this.className=soundOn?"on":"";if(soundOn)beep(true)}
+  catch(e){$("status").textContent="이 브라우저는 소리를 지원하지 않아요. 진동만 울려요."}
+};
+$("awake").onclick=function(){
+  var btn=this;
+  if(wake){wake.release().catch(function(){});wake=null;btn.className="";btn.textContent="💡 화면 켜두기";return}
+  if(!("wakeLock" in navigator)){$("status").textContent="이 브라우저는 화면 켜두기를 지원하지 않아요.";return}
+  navigator.wakeLock.request("screen").then(function(w){wake=w;btn.className="on";btn.textContent="💡 화면 켜짐";
+    w.addEventListener("release",function(){if(wake===w){wake=null;btn.className="";btn.textContent="💡 화면 켜두기"}})})
+  .catch(function(){$("status").textContent="화면 켜두기를 할 수 없어요. 휴대폰 설정을 확인해 주세요."});
+};
+document.addEventListener("visibilitychange",function(){if(document.visibilityState==="visible"&&timer){tick()}});
+
+function addLog(html,flash){
+  var d=document.createElement("div"),now=new Date();
+  d.innerHTML="<span class='small'>"+now.toTimeString().slice(0,8)+"</span> "+html;
+  var log=$("log");if(log.firstChild&&log.firstChild.className==="small")log.innerHTML="";
+  log.insertBefore(d,log.firstChild);while(log.children.length>60)log.removeChild(log.lastChild);
+  if(flash){var a=$("alertbox");a.innerHTML=html;a.style.display="block";clearTimeout(a._t);a._t=setTimeout(function(){a.style.display="none"},20000)}
+}
+
+function walls(side,n,min){return side.filter(function(x){return x[1]>=min}).sort(function(a,b){return b[1]-a[1]}).slice(0,n)}
+function near(list,p){return list.some(function(x){return Math.abs(x[0]-p)/p<0.0005})}
+
+function snapshot(sym){
+  return Promise.all([
+    get("/fapi/v1/premiumIndex?symbol="+sym),
+    get("/fapi/v1/klines?symbol="+sym+"&interval=1m&limit=6"),
+    get("/fapi/v1/klines?symbol="+sym+"&interval=5m&limit=100"),
+    get("/fapi/v1/openInterest?symbol="+sym),
+    get("/futures/data/globalLongShortAccountRatio?symbol="+sym+"&period=5m&limit=1").catch(function(){return []}),
+    get("/futures/data/topLongShortPositionRatio?symbol="+sym+"&period=5m&limit=1").catch(function(){return []}),
+    get("/fapi/v1/depth?symbol="+sym+"&limit=500")
+  ]).then(function(r){
+    var mark=+r[0].markPrice,k1=r[1],k5=r[2],last=+k1[k1.length-1][4];
+    var asks=r[6].asks.map(function(a){return[+a[0],a[0]*a[1]]}).filter(function(a){return a[0]<=last*(1+NEAR/100)});
+    var bids=r[6].bids.map(function(b){return[+b[0],b[0]*b[1]]}).filter(function(b){return b[0]>=last*(1-NEAR/100)});
+    return {mark:mark,last:last,funding:+r[0].lastFundingRate,k1:k1,k5:k5,oi:r[3].openInterest*mark,
+      ls:r[4][0]?+r[4][0].longShortRatio:null,topLong:r[5][0]?+r[5][0].longAccount:null,asks:asks,bids:bids};
+  });
+}
+
+function analyze(s,levels){
+  var c5=s.k5.slice(0,-1).map(function(x){return +x[4]});c5.push(s.last);
+  var e9=ema(c5,9).pop(),e21=ema(c5,21).pop(),r=rsi(c5),px=s.last;
+  var buy=s.k1.slice(-3).map(function(x){return +x[5]?x[9]/x[5]*100:50}),avgBuy=(buy[0]+buy[1]+buy[2])/3;
+  var askT=s.asks.reduce(function(a,b){return a+b[1]},0),bidT=s.bids.reduce(function(a,b){return a+b[1]},0);
+  var up=walls(s.asks,3,1000),dn=walls(s.bids,3,1000);
+  var res=up.slice().sort(function(a,b){return a[0]-b[0]})[0],sup=dn.slice().sort(function(a,b){return b[0]-a[0]})[0];
+  var score=0,notes=[];
+  if(px>e9&&e9>e21){score+=2;notes.push("5분봉 평균선 위 (작은 흐름 위쪽)")}
+  else if(px<e9&&e9<e21){score-=2;notes.push("5분봉 평균선 아래 (작은 흐름 아래쪽)")}
+  else notes.push("평균선 근처 (방향 애매)");
+  if(avgBuy>=55){score+=1.5;notes.push("사는 힘 강함")}else if(avgBuy<=45){score-=1.5;notes.push("파는 힘 강함")}
+  if(bidT>askT*1.25){score+=1;notes.push("바닥이 더 두꺼움")}else if(askT>bidT*1.25){score-=1;notes.push("천장이 더 두꺼움")}
+  if(prev){var doi=pct(s.oi,prev.oi),dpx=pct(px,prev.last);
+    if(doi<-1.5&&dpx<0)notes.push("⚠️ 롱 청산 나오는 중");
+    else if(doi<-1.5&&dpx>0){notes.push("⚠️ 숏 청산(스퀴즈) 나오는 중");score+=1}
+    else if(doi>1.5&&dpx>0)notes.push("새 롱 들어오는 중");
+    else if(doi>1.5&&dpx<0)notes.push("새 숏 들어오는 중")}
+  if(s.ls!=null&&s.ls<0.9)notes.push("개미 숏 쏠림 → 급등 시 스퀴즈 연료");
+  if(s.ls!=null&&s.ls>2)notes.push("개미 롱 쏠림 → 급락 시 청산 연료");
+  if(r>=75){score-=0.5;notes.push("RSI 과열")}else if(r<=25){score+=0.5;notes.push("RSI 과매도")}
+  var rs=res?fmt(res[0]):"-",sp=sup?fmt(sup[0]):"-",verdict,vc,outlook;
+  if(score>=3){verdict="🟢 상승 우세";vc="up";outlook="사는 힘이 강해요. 천장 "+rs+"를 뚫으면 더 올라가고, 막히면 다시 밀려요."}
+  else if(score<=-3){verdict="🔴 하락 우세";vc="down";outlook="파는 힘이 강해요. 바닥 "+sp+"가 깨지면 더 내려가고, 받치면 반등을 시도해요."}
+  else if(score>=1){verdict="🟢 약한 상승";vc="up";outlook="살짝 위쪽. 천장 "+rs+"를 뚫기 전까지는 옆으로 갈 가능성이 커요."}
+  else if(score<=-1){verdict="🔴 약한 하락";vc="down";outlook="살짝 아래쪽. 바닥 "+sp+"가 버티는지 확인 전까지는 옆으로 갈 가능성이 커요."}
+  else{verdict="🟡 옆으로 (방향 없음)";vc="warn";outlook=sp+" ~ "+rs+" 사이에서 힘겨루기. 먼저 깨지는 쪽으로 움직일 가능성이 커요."}
+  return {e9:e9,e21:e21,rsi:r,buy:buy,askT:askT,bidT:bidT,up:up,dn:dn,score:score,notes:notes,verdict:verdict,vc:vc,outlook:outlook};
+}
+
+function render(sym,s,a,levels){
+  var px=s.last;
+  $("title").textContent=sym;$("time").textContent="업데이트 "+new Date().toTimeString().slice(0,8);
+  $("price").textContent=fmt(px);
+  var c5=pct(px,+s.k5[s.k5.length-2][4]);
+  $("chg").innerHTML="<span class='"+cls(c5)+"'>5분 "+ps(c5)+"</span>";
+  var hi=Math.max.apply(null,s.k5.slice(-12).map(function(x){return +x[2]})),lo=Math.min.apply(null,s.k5.slice(-12).map(function(x){return +x[3]}));
+  $("sub").innerHTML="최근 1시간 고 "+fmt(hi)+" / 저 "+fmt(lo)+(startPx?" · 시작 대비 <span class='"+cls(pct(px,startPx))+"'>"+ps(pct(px,startPx))+"</span>":"");
+  $("verdict").textContent=a.verdict;$("verdict").className="verdict "+a.vc;
+  $("outlook").innerHTML=a.outlook+"<div class='small' style='margin-top:4px'>"+a.notes.join(" · ")+"</div>";
+  // ladder
+  var items=[];
+  a.up.forEach(function(w){items.push({p:w[0],t:"🧱 천장 "+fmt(w[0])+" ("+k$(w[1])+")",c:"down"})});
+  a.dn.forEach(function(w){items.push({p:w[0],t:"🧱 바닥 "+fmt(w[0])+" ("+k$(w[1])+")",c:"up"})});
+  levels.forEach(function(L){items.push({p:L,t:"🔔 알림 "+fmt(L)+" ("+ps(pct(L,px))+")",c:"lv"})});
+  items.push({p:px,t:"🎈 지금 "+fmt(px),c:"me"});
+  items.sort(function(x,y){return y.p-x.p});
+  $("ladder").innerHTML=items.map(function(i){return "<div class='"+i.c+"'>"+i.t+"</div>"}).join("");
+  // tug
+  $("bars").innerHTML=a.buy.map(function(b){return "<div class='"+(b>=55?"up":b<=45?"down":"")+"'>"+b.toFixed(0)+"%</div>"}).join("");
+  var tot=a.askT+a.bidT||1,bp=a.bidT/tot*100;
+  $("tug").innerHTML="<span style='width:"+bp+"%;background:var(--up)'></span><span style='width:"+(100-bp)+"%;background:var(--down)'></span>";
+  $("tugtxt").textContent="바닥(매수) "+k$(a.bidT)+" vs 천장(매도) "+k$(a.askT)+"  (현재가 ±"+NEAR+"%)";
+  // kv
+  $("top").textContent=s.topLong!=null?(s.topLong*100).toFixed(1)+"%":"-";
+  $("top").className=s.topLong==null?"":s.topLong>=0.55?"up":s.topLong<=0.45?"down":"";
+  $("ls").textContent=s.ls!=null?s.ls.toFixed(2):"-";
+  $("oi").innerHTML=k$(s.oi)+(prev?" <span class='small "+cls(pct(s.oi,prev.oi))+"'>"+ps(pct(s.oi,prev.oi))+"</span>":"");
+  $("fund").textContent=(s.funding*100).toFixed(4)+"%";
+  $("rsi").textContent=a.rsi.toFixed(0);$("rsi").className=a.rsi>=75?"down":a.rsi<=25?"up":"";
+  $("ema").textContent=fmt(a.e9)+" / "+fmt(a.e21);
+}
+
+function events(s,levels){
+  if(!prev)return;var px=s.last,pp=prev.last;
+  levels.forEach(function(L){
+    if(pp<L&&L<=px){addLog("<b class='up'>▲ "+fmt(L)+" 위로 돌파!</b>",true);beep(true)}
+    if(pp>L&&L>=px){addLog("<b class='down'>▼ "+fmt(L)+" 아래로 이탈!</b>",true);beep(false)}
+  });
+  walls(prev.asks,5,WALL).forEach(function(w){if(!near(s.asks,w[0])){
+    if(px<w[0])addLog("<span class='warn'>천장 "+fmt(w[0])+" ("+k$(w[1])+") 사라짐 (체결 없이 취소)</span>");
+    else addLog("<span class='up'>천장 "+fmt(w[0])+" 뚫림</span>")}});
+  walls(prev.bids,5,WALL).forEach(function(w){if(!near(s.bids,w[0])){
+    if(px>w[0])addLog("<span class='warn'>바닥 "+fmt(w[0])+" ("+k$(w[1])+") 사라짐 (체결 없이 취소)</span>");
+    else addLog("<span class='down'>바닥 "+fmt(w[0])+" 깨짐</span>")}});
+  walls(s.asks,3,WALL).forEach(function(w){if(!near(prev.asks,w[0]))addLog("새 천장 "+fmt(w[0])+" ("+k$(w[1])+")")});
+  walls(s.bids,3,WALL).forEach(function(w){if(!near(prev.bids,w[0]))addLog("새 바닥 "+fmt(w[0])+" ("+k$(w[1])+")")});
+}
+
+var cur={sym:null,levels:[]};
+function tick(){
+  var sym=cur.sym,levels=cur.levels;
+  snapshot(sym).then(function(s){
+    if(sym!==cur.sym)return;
+    startPx=startPx||s.last;
+    var a=analyze(s,levels);events(s,levels);render(sym,s,a,levels);prev=s;
+    $("dot").className="dot live";$("status").textContent="실시간 연결됨 · "+$("sec").value+"초마다 업데이트";
+  }).catch(function(e){
+    $("dot").className="dot err";
+    $("status").textContent="데이터를 못 가져왔어요 ("+e.message+"). 종목 이름을 확인하거나, 이 나라에서 바이낸스 접속이 막혔는지 확인해 주세요. 자동으로 다시 시도해요.";
+  });
+}
+function start(){
+  var sym=$("sym").value.trim().toUpperCase();if(!sym)return;
+  var levels=$("levels").value.split(/[,\s]+/).map(Number).filter(function(x){return x>0});
+  store("sym",sym);store("levels",$("levels").value);store("sec",$("sec").value);
+  if(sym!==cur.sym){prev=null;startPx=null;$("log").innerHTML="";}
+  cur={sym:sym,levels:levels};
+  clearInterval(timer);tick();timer=setInterval(tick,(+$("sec").value)*1000);
+  $("go").textContent="적용";
+}
+$("go").onclick=start;
+$("sec").onchange=function(){if(timer)start()};
+start();
+})();
+</script>
+</body>
+</html>
